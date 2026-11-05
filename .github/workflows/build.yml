@@ -92,12 +92,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
 
       - name: Checkout Test Data
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: 'asmaloney/libE57Format-test-data'
           path: libE57Format-test-data
@@ -105,7 +105,7 @@ jobs:
       - name: Install Dependencies (macOS)
         if: matrix.platform == 'macos'
         run: |
-          brew install ccache ninja xerces-c
+          brew install ccache xerces-c
 
       - name: Install Dependencies (Linux)
         if: matrix.platform == 'linux'
@@ -116,21 +116,22 @@ jobs:
 
       - name: Install Dependencies (Windows)
         if: matrix.platform == 'windows'
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
-          channels: conda-forge
+          channels: conda-forge,defaults
 
       - name: Install More Dependencies (Windows)
         if: matrix.platform == 'windows'
         shell: bash -el {0}
         run: |
           conda install conda-forge::xerces-c
+          echo "CMAKE_PREFIX_PATH=${CONDA_PREFIX}/Library" >> "$GITHUB_ENV"
           choco upgrade ccache ninja
           ccache --version | head -n 1
           echo "ninja $(ninja --version)"
 
       - name: ccache
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
           max-size: '5G'
           key: ${{ matrix.os }}-${{ matrix.build_type }}

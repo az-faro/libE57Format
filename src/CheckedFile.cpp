@@ -32,8 +32,13 @@
 
 #if defined( _WIN32 )
 #if defined( _MSC_VER )
-#include <codecvt>
+#include <codecvt> //  codecvt_utf8_utf16 is deprecated in C++17, removed in C++226
 #include <io.h>
+#define NOMINMAX // prevents <windows.h> to  #define min and max. Sigh ...
+// clang-format off: <windows.h> MUST be included before <stringapiset.h>
+#include <windows.h>
+#include <stringapiset.h> // Use WIN32 API to replace codecvt_utf8_utf16
+// clang-format on
 #elif defined( __GNUC__ )
 #ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
@@ -77,6 +82,11 @@
 
 #include "CheckedFile.h"
 #include "StringFunctions.h"
+
+// Fallback
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
 
 // #define E57_CHECK_FILE_DEBUG
 #ifdef E57_CHECK_FILE_DEBUG
@@ -162,6 +172,16 @@ public:
    void read( char *buffer, uint64_t count )
    {
       const uint64_t start = cursorStream_;
+
+      // Written as ( count > streamSize_ - start ) rather than ( start + count > streamSize_ )
+      // so the check itself cannot overflow.
+      if ( start > streamSize_ || count > streamSize_ - start )
+      {
+         throw E57_EXCEPTION2( ErrorReadFailed, "pos=" + toString( start ) +
+                                                   " count=" + toString( count ) +
+                                                   " bufferSize=" + toString( streamSize_ ) );
+      }
+
       for ( uint64_t i = 0; i < count; ++i )
       {
          buffer[i] = stream_[start + i];
@@ -182,17 +202,20 @@ CheckedFile::CheckedFile( const ustring &fileName, Mode mode, ReadChecksumPolicy
    {
       case Read:
       {
-#if defined( _MSC_VER )
          constexpr int readFlags = O_RDONLY | O_BINARY;
-#else
-         constexpr int readFlags = O_RDONLY;
-#endif
 
          fd_ = open64( fileName_, readFlags, 0 );
 
          readOnly_ = true;
 
          physicalLength_ = lseek64( 0LL, SEEK_END );
+
+         if ( physicalLength_ % 1024 != 0 )
+         {
+            throw E57_EXCEPTION2( ErrorBadInputDataSize,
+                                  "file length is " + toString( physicalLength_ ) + " bytes" );
+         }
+
          lseek64( 0, SEEK_SET );
 
          logicalLength_ = physicalToLogical( physicalLength_ );
@@ -203,11 +226,10 @@ CheckedFile::CheckedFile( const ustring &fileName, Mode mode, ReadChecksumPolicy
       {
          // File truncated to zero length if already exists
 
-#if defined( _MSC_VER )
          constexpr int writeFlags = O_RDWR | O_CREAT | O_TRUNC | O_BINARY;
+#if defined( _MSC_VER )
          constexpr int writeMode = S_IREAD | S_IWRITE;
 #else
-         constexpr int writeFlags = O_RDWR | O_CREAT | O_TRUNC;
          constexpr int writeMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
 #endif
 
@@ -220,6 +242,12 @@ CheckedFile::CheckedFile( const ustring &fileName, Mode mode, ReadChecksumPolicy
 CheckedFile::CheckedFile( const char *input, uint64_t size, ReadChecksumPolicy policy ) :
    fileName_( "<StreamBuffer>" ), checkSumPolicy_( policy )
 {
+   if ( size % 1024 != 0 )
+   {
+      throw E57_EXCEPTION2( ErrorBadInputDataSize,
+                            "buffer length is " + toString( size ) + " bytes" );
+   }
+
    bufView_ = new BufferView( input, size );
 
    readOnly_ = true;
@@ -233,12 +261,31 @@ CheckedFile::CheckedFile( const char *input, uint64_t size, ReadChecksumPolicy p
 int CheckedFile::open64( const ustring &fileName, int flags, int mode )
 {
 #if defined( _MSC_VER )
-   // Ref: https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/sopen-s-wsopen-s
 
-   // Handle UTF-8 file names - Windows requires conversion to UTF-16
+// Handle UTF-8 file names - Windows requires conversion to UTF-16
+#if ( ( defined( _MSVC_LANG ) && _MSVC_LANG >= 201703L ) || __cplusplus >= 201703L )
+   // Ref:
+   // https://learn.microsoft.com/en-us/windows/win32/api/stringapiset/nf-stringapiset-multibytetowidechar
+   std::wstring widePath;
+   int sizeUtf16 = ::MultiByteToWideChar( CP_UTF8, 0, fileName.c_str(), -1, NULL, 0 );
+   if ( sizeUtf16 > 0 )
+   {
+      widePath.resize( sizeUtf16 + 1 );
+      sizeUtf16 =
+         ::MultiByteToWideChar( CP_UTF8, 0, fileName.c_str(), -1, &widePath[0], sizeUtf16 );
+   }
+   if ( sizeUtf16 <= 0 )
+   {
+      throw E57_EXCEPTION2( ErrorOpenFailed,
+                            "Error in converting file name to UTF16. fileName=" + fileName );
+   }
+#else
+   // Until C++17
    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
    std::wstring widePath = converter.from_bytes( fileName );
+#endif
 
+   // Ref: https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/sopen-s-wsopen-s
    int handle;
    errno_t err = _wsopen_s( &handle, widePath.c_str(), flags, _SH_DENYNO, mode );
    if ( err != 0 )

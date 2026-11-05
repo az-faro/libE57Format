@@ -102,10 +102,11 @@ This _Simple API_ has evolved since this original port to fix some problems and 
 - [CloudCompare](https://github.com/CloudCompare/CloudCompare)
 - [MeshLab](https://github.com/cnr-isti-vclab/meshlab)
 - [pye57](https://github.com/davidcaron/pye57)
+- [FreeCAD](https://github.com/FreeCAD/FreeCAD)
 
 These projects use hard forks of libE57Format:
 
-- [FreeCAD](https://github.com/FreeCAD/FreeCAD)
+- [MicMac](https://github.com/micmacIGN/micmac)
 - [PDAL](https://github.com/PDAL/PDAL)
 
 There are also many commercial products using libE57Format. If any of them would like to sponsor the project and be listed here, please <a href="mailto:asmaloney@gmail.com?subject=libE57Format Sponsorship">contact Andy</a>.
@@ -143,6 +144,10 @@ This project uses [clang-format](https://clang.llvm.org/docs/ClangFormat.html) t
 ```sh
 cmake --build . --target e57-clang-format
 ```
+
+#### Generative "AI" PRs
+
+I am not accepting generative "AI" code into this library at this time.
 
 ### 📖 Documentation
 
